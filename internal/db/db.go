@@ -225,6 +225,17 @@ func FetchRvInfoJSON() ([]byte, error) {
 	return rvInfo.Value, nil
 }
 
+func DeleteRvInfo() error {
+	tx := db.Where("id = ?", 1).Delete(&RvInfo{})
+	if tx.Error != nil {
+		return tx.Error
+	}
+	if tx.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
 // ListDevices returns devices known to the owner service, combining voucher
 // metadata with TO2 onboarding state (if any) from device_onboarding.
 // Devices are ordered by most recently updated voucher first.

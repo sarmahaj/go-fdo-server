@@ -12,6 +12,7 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -20,10 +21,13 @@ import (
 	"syscall"
 	"time"
 
+	"golang.org/x/time/rate"
+
 	"github.com/fido-device-onboard/go-fdo"
-	"github.com/fido-device-onboard/go-fdo-server/api"
-	"github.com/fido-device-onboard/go-fdo-server/api/handlers"
 	"github.com/fido-device-onboard/go-fdo-server/internal/db"
+	"github.com/fido-device-onboard/go-fdo-server/internal/handlers/health"
+	"github.com/fido-device-onboard/go-fdo-server/internal/handlers/rvinfo"
+	"github.com/fido-device-onboard/go-fdo-server/internal/state"
 	"github.com/fido-device-onboard/go-fdo/custom"
 	transport "github.com/fido-device-onboard/go-fdo/http"
 	"github.com/fido-device-onboard/go-fdo/protocol"
@@ -263,22 +267,63 @@ func serveManufacturing(config *ManufacturingServerConfig) error {
 		},
 	}
 
-	// Handle messages
-	apiRouter := http.NewServeMux()
-	apiRouter.HandleFunc("GET /vouchers", handlers.GetVoucherHandler)
-	apiRouter.HandleFunc("GET /vouchers/{guid}", handlers.GetVoucherByGUIDHandler)
-	apiRouter.Handle("/rvinfo", handlers.RvInfoHandler())
-	httpHandler, err := api.NewHTTPHandler(handler, dbState).RegisterRoutes(apiRouter)
+	// Create root mux for all routes
+	rootMux := http.NewServeMux()
+
+	// Register FDO protocol handler
+	rootMux.Handle("POST /fdo/101/msg/{msg}", handler)
+
+	// Initialize and register health handler
+	healthState, err := state.InitHealthDB(dbState.DB)
 	if err != nil {
-		slog.Error("failed to register routes", "err", err)
+		slog.Error("failed to initialize health database", "err", err)
 		return err
 	}
+	healthServer := health.NewServer(healthState)
+	healthStrictHandler := health.NewStrictHandler(&healthServer, nil)
+	health.HandlerFromMux(healthStrictHandler, rootMux)
+
+	// Create management API mux for RVInfo handler
+	mgmtAPIServeMux := http.NewServeMux()
+
+	// RVInfo handler
+	rvInfoServer := rvinfo.NewServer()
+	rvInfoStrictHandler := rvinfo.NewStrictHandler(&rvInfoServer, nil)
+	rvinfo.HandlerFromMux(rvInfoStrictHandler, mgmtAPIServeMux)
+
+	// Apply middleware to management APIs
+	mgmtAPIHandler := rateLimitMiddleware(rate.NewLimiter(2, 10),
+		bodySizeMiddleware(1<<20, mgmtAPIServeMux))
+	rootMux.Handle("/api/v1/", http.StripPrefix("/api", mgmtAPIHandler))
 
 	// Listen and serve
-	server := NewManufacturingServer(config.HTTP, httpHandler)
+	server := NewManufacturingServer(config.HTTP, rootMux)
 
 	slog.Debug("Starting server on:", "addr", config.HTTP.ListenAddress())
 	return server.Start()
+}
+
+func rateLimitMiddleware(limiter *rate.Limiter, next http.Handler) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !limiter.Allow() {
+			http.Error(w, "Too Many Requests", http.StatusTooManyRequests)
+			return
+		}
+		next.ServeHTTP(w, r)
+	}
+}
+
+func bodySizeMiddleware(limitBytes int64, next http.Handler) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		r.Body = struct {
+			io.Reader
+			io.Closer
+		}{
+			Reader: io.LimitReader(r.Body, limitBytes),
+			Closer: r.Body,
+		}
+		next.ServeHTTP(w, r)
+	}
 }
 
 func encodePublicKey(keyType protocol.KeyType, keyEncoding protocol.KeyEncoding, pub crypto.PublicKey, chain []*x509.Certificate) (*protocol.PublicKey, error) {
