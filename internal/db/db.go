@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"math"
 	"net"
+	"strconv"
 
 	"github.com/fido-device-onboard/go-fdo/cbor"
 	"github.com/fido-device-onboard/go-fdo/protocol"
@@ -178,6 +179,7 @@ func FetchOwnerInfo() ([]protocol.RvTO2Addr, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	return parseHumanToTO2AddrsJSON(ownerInfoData)
 }
 
@@ -436,7 +438,7 @@ func parseRvInstruction(key string, value interface{}) (*protocol.RvInstruction,
 		return &protocol.RvInstruction{Variable: protocol.RVMedium, Value: enc}, nil
 
 	case "device_port":
-		num, err := parsePortValue(value)
+		num, err := parsePortValueV2(value)
 		if err != nil {
 			return nil, fmt.Errorf("device_port: %w", err)
 		}
@@ -447,7 +449,7 @@ func parseRvInstruction(key string, value interface{}) (*protocol.RvInstruction,
 		return &protocol.RvInstruction{Variable: protocol.RVDevPort, Value: enc}, nil
 
 	case "owner_port":
-		num, err := parsePortValue(value)
+		num, err := parsePortValueV2(value)
 		if err != nil {
 			return nil, fmt.Errorf("owner_port: %w", err)
 		}
@@ -599,10 +601,10 @@ func parseRvInstruction(key string, value interface{}) (*protocol.RvInstruction,
 	}
 }
 
-
-func parsePortValue(v any) (uint16, error) {
+// parsePortValueV2 validates port values for V2 API (OpenAPI spec).
+// Only accepts integers (float64 in JSON). Rejects strings for strict type compliance.
+func parsePortValueV2(v any) (uint16, error) {
 	// Only accept integer (float64 in JSON)
-	// OpenAPI spec requires integer type for ports
 	f, ok := v.(float64)
 	if !ok {
 		return 0, fmt.Errorf("port must be an integer, got %T", v)
@@ -619,6 +621,36 @@ func parsePortValue(v any) (uint16, error) {
 	}
 
 	return uint16(f), nil
+}
+
+// parsePortValueV1 validates port values for V1 API (backward compatibility).
+// Accepts both integers and strings for legacy support.
+func parsePortValueV1(v any) (uint16, error) {
+	switch t := v.(type) {
+	case float64:
+		if t != math.Trunc(t) {
+			return 0, fmt.Errorf("port must be an integer, got %v", t)
+		}
+		if t < 1 || t > 65535 {
+			return 0, fmt.Errorf("port out of range: %v", t)
+		}
+		return uint16(t), nil
+	case string:
+		// V1 API backward compatibility: accept string ports
+		if t == "" {
+			return 0, fmt.Errorf("empty port")
+		}
+		i, err := strconv.Atoi(t)
+		if err != nil {
+			return 0, err
+		}
+		if i < 1 || i > 65535 {
+			return 0, fmt.Errorf("port out of range: %d", i)
+		}
+		return uint16(i), nil
+	default:
+		return 0, fmt.Errorf("port must be an integer or string, got %T", v)
+	}
 }
 
 func protocolCodeFromString(s string) (uint8, error) {
@@ -701,7 +733,7 @@ func parseHumanToTO2AddrsJSON(rawJSON []byte) ([]protocol.RvTO2Addr, error) {
 			return nil, fmt.Errorf("to2[%d]: at least one of dns or ip must be specified", i)
 		}
 		if item.Port != "" {
-			p, err := parsePortValue(item.Port)
+			p, err := parsePortValueV1(item.Port)
 			if err != nil {
 				return nil, fmt.Errorf("port: %w", err)
 			}

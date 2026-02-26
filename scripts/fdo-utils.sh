@@ -28,6 +28,13 @@ update_rendezvous_info() {
     "${manufacturer_url}/api/v1/rvinfo"
 }
 
+delete_rendezvous_info() {
+  local manufacturer_url=$1
+  curl --fail --verbose --silent --insecure \
+    --request DELETE \
+    "${manufacturer_url}/api/v1/rvinfo"
+}
+
 get_owner_redirect_info() {
   local owner_url=$1
   curl --fail --verbose --silent --insecure \

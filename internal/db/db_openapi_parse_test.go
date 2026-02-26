@@ -232,8 +232,8 @@ func TestParseOpenAPIRvJSON_Invalid(t *testing.T) {
 			errSubstr: "ext_rv[1] must be a string",
 		},
 		{
-			name: "malformed_json",
-			jsonBody: `[[[{bad}]]]`,
+			name:      "malformed_json",
+			jsonBody:  `[[[{bad}]]]`,
 			errSubstr: "invalid",
 		},
 	}
@@ -254,12 +254,12 @@ func TestParseOpenAPIRvJSON_Invalid(t *testing.T) {
 func TestParseOpenAPIRvJSON_ProtocolValues(t *testing.T) {
 	// Test that protocol strings are converted to correct codes
 	protocols := map[string]uint8{
-		"http":      protocol.RVProtHTTP,
-		"https":     protocol.RVProtHTTPS,
-		"tcp":       protocol.RVProtTCP,
-		"tls":       protocol.RVProtTLS,
-		"coap+tcp":  protocol.RVProtCoapTCP,
-		"coap":      protocol.RVProtCoapUDP,
+		"http":     protocol.RVProtHTTP,
+		"https":    protocol.RVProtHTTPS,
+		"tcp":      protocol.RVProtTCP,
+		"tls":      protocol.RVProtTLS,
+		"coap+tcp": protocol.RVProtCoapTCP,
+		"coap":     protocol.RVProtCoapUDP,
 	}
 
 	for protoStr, expectedCode := range protocols {

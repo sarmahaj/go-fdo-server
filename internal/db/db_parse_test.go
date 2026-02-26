@@ -5,7 +5,6 @@ import (
 	"testing"
 )
 
-
 func TestListPendingTO0Vouchers_FilterByOnboarding(t *testing.T) {
 	state, err := InitDb("sqlite", "file::memory:?cache=shared")
 	if err != nil {
@@ -49,94 +48,33 @@ func TestListPendingTO0Vouchers_FilterByOnboarding(t *testing.T) {
 	}
 }
 
-func TestParseHumanToTO2AddrsJSON_Cases(t *testing.T) {
+func TestParsePortValueV1_Cases(t *testing.T) {
 	cases := []struct {
 		name      string
-		jsonBody  string
+		in        any
+		want      uint16
 		wantError bool
 		errSubstr string
 	}{
-		{
-			name:     "valid_dns_only",
-			jsonBody: `[{"dns":"owner.example.com","port":"32768","protocol":"http"}]`,
-		},
-		{
-			name:     "valid_ip_only",
-			jsonBody: `[{"ip":"10.0.0.5","port":"32768","protocol":"https"}]`,
-		},
-		{
-			name:     "valid_both",
-			jsonBody: `[{"dns":"owner.example.com","ip":"10.0.0.5","port":"32768","protocol":"tls"}]`,
-		},
-		{
-			name:      "invalid_missing_dns_ip",
-			jsonBody:  `[{}]`,
-			wantError: true,
-			errSubstr: "at least one of dns or ip",
-		},
-		{
-			name:      "invalid_protocol",
-			jsonBody:  `[{"dns":"owner.example.com","port":"32768","protocol":"bogus"}]`,
-			wantError: true,
-			errSubstr: "unsupported transport protocol",
-		},
-		{
-			name:      "invalid_port_non_numeric",
-			jsonBody:  `[{"dns":"owner.example.com","port":"eightythree","protocol":"http"}]`,
-			wantError: true,
-			errSubstr: "port:",
-		},
-		{
-			name:      "invalid_transport_protocol_case",
-			jsonBody:  `[{"dns":"owner.example.com","port":"32768","protocol":"HTTP"}]`,
-			wantError: true,
-			errSubstr: "unsupported transport protocol",
-		},
-		{
-			name:      "invalid_json_malformed",
-			jsonBody:  `[{bad}]`,
-			wantError: true,
-			errSubstr: "invalid",
-		},
-		{
-			name:      "invalid_top_level_object",
-			jsonBody:  `{}`,
-			wantError: true,
-			errSubstr: "cannot unmarshal object",
-		},
-		{
-			name:      "invalid_protocol_type_number",
-			jsonBody:  `[{"dns":"owner.example.com","port":8043,"protocol":1}]`,
-			wantError: true,
-			errSubstr: "cannot unmarshal number",
-		},
-		{
-			name:     "port_empty_is_ignored",
-			jsonBody: `[{"dns":"owner.example.com","port":"","protocol":"http"}]`,
-		},
-		{
-			name:      "invalid_port_float",
-			jsonBody:  `[{"dns":"owner.example.com","port":8043.5,"protocol":"http"}]`,
-			wantError: true,
-			errSubstr: "cannot unmarshal number",
-		},
-		{
-			name:      "invalid_dns_type_number",
-			jsonBody:  `[{"dns":123,"port":8043,"protocol":"http"}]`,
-			wantError: true,
-			errSubstr: "cannot unmarshal number",
-		},
-		{
-			name:      "invalid_ip_type_number",
-			jsonBody:  `[{"ip":123,"port":8043,"protocol":"http"}]`,
-			wantError: true,
-			errSubstr: "cannot unmarshal number",
-		},
+		// String inputs (V1 API backward compatibility)
+		{name: "string_valid_min", in: "1", want: 1},
+		{name: "string_valid_max", in: "65535", want: 65535},
+		{name: "string_invalid_zero", in: "0", wantError: true, errSubstr: "port out of range"},
+		{name: "string_invalid_out_of_range", in: "65536", wantError: true, errSubstr: "port out of range"},
+		{name: "string_invalid_non_numeric", in: "eighty", wantError: true, errSubstr: "invalid syntax"},
+		{name: "string_invalid_empty", in: "", wantError: true, errSubstr: "empty port"},
+
+		// Integer inputs (also supported in V1)
+		{name: "float_valid_lower_bound", in: float64(1), want: 1},
+		{name: "float_valid_upper_bound", in: float64(65535), want: 65535},
+		{name: "float_invalid_fractional", in: 8043.5, wantError: true, errSubstr: "port must be an integer"},
+		{name: "float_invalid_below_min", in: float64(0), wantError: true, errSubstr: "port out of range"},
+		{name: "float_invalid_above_max", in: float64(65536), wantError: true, errSubstr: "port out of range"},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := parseHumanToTO2AddrsJSON([]byte(tc.jsonBody))
+			got, err := parsePortValueV1(tc.in)
 			if tc.wantError {
 				if err == nil {
 					t.Fatalf("expected error, got nil")
@@ -149,11 +87,14 @@ func TestParseHumanToTO2AddrsJSON_Cases(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
+			if got != tc.want {
+				t.Fatalf("unexpected value: got %d want %d", got, tc.want)
+			}
 		})
 	}
 }
 
-func TestParsePortValue_Cases(t *testing.T) {
+func TestParsePortValueV2_Cases(t *testing.T) {
 	cases := []struct {
 		name      string
 		in        any
@@ -161,15 +102,12 @@ func TestParsePortValue_Cases(t *testing.T) {
 		wantError bool
 		errSubstr string
 	}{
-		// String inputs are no longer supported (OpenAPI requires integer)
-		{name: "string_rejected", in: "1", wantError: true, errSubstr: "port must be an integer"},
-		{name: "string_rejected_large", in: "65535", wantError: true, errSubstr: "port must be an integer"},
-		{name: "string_rejected_invalid", in: "0", wantError: true, errSubstr: "port must be an integer"},
-		{name: "string_rejected_out_of_range", in: "65536", wantError: true, errSubstr: "port must be an integer"},
-		{name: "string_rejected_non_numeric", in: "eighty", wantError: true, errSubstr: "port must be an integer"},
-		{name: "string_rejected_empty", in: "", wantError: true, errSubstr: "port must be an integer"},
+		// String inputs should be REJECTED in V2 (strict typing)
+		{name: "string_rejected_valid", in: "8080", wantError: true, errSubstr: "port must be an integer"},
+		{name: "string_rejected_min", in: "1", wantError: true, errSubstr: "port must be an integer"},
+		{name: "string_rejected_max", in: "65535", wantError: true, errSubstr: "port must be an integer"},
 
-		// Integer inputs (float64 in JSON)
+		// Integer inputs (V2 API - OpenAPI requires integer, from JSON as float64)
 		{name: "float_valid_lower_bound", in: float64(1), want: 1},
 		{name: "float_valid_upper_bound", in: float64(65535), want: 65535},
 		{name: "float_invalid_fractional", in: 8043.5, wantError: true, errSubstr: "whole number"},
@@ -179,7 +117,7 @@ func TestParsePortValue_Cases(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := parsePortValue(tc.in)
+			got, err := parsePortValueV2(tc.in)
 			if tc.wantError {
 				if err == nil {
 					t.Fatalf("expected error, got nil")

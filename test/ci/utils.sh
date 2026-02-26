@@ -55,7 +55,8 @@ rendezvous_url="${rendezvous_protocol}://${rendezvous_service}"
 rendezvous_health_url="${rendezvous_url}/health"
 
 # Default RV info JSON for standard tests (can be overridden per test)
-rv_info="[{\"dns\": \"${rendezvous_dns}\", \"device_port\": \"${rendezvous_port}\", \"protocol\": \"${rendezvous_protocol}\", \"ip\": \"${rendezvous_ip}\", \"owner_port\": \"${rendezvous_port}\"}]"
+# OpenAPI format: array of arrays of single-key objects
+rv_info="[[{\"dns\": \"${rendezvous_dns}\"}, {\"device_port\": \"${rendezvous_port}\"}, {\"protocol\": \"${rendezvous_protocol}\"}, {\"ip\": \"${rendezvous_ip}\"}, {\"owner_port\": \"${rendezvous_port}\"}]]"
 
 owner_service_name="owner"
 owner_dns=owner

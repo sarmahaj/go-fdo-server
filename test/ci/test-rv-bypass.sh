@@ -35,8 +35,8 @@ run_test() {
   wait_for_services_ready
 
   log_info "Setting Rendezvous Info with RV BYPASS flag"
-  # Override rv_info to point to owner with rv_bypass flag
-  rv_info="[{\"dns\": \"${owner_dns}\", \"device_port\": \"${owner_port}\", \"protocol\": \"${owner_protocol}\", \"ip\": \"${owner_ip}\", \"owner_port\": \"${owner_port}\", \"rv_bypass\": true}]"
+  # Override rv_info to point to owner with rv_bypass flag (OpenAPI format)
+  rv_info="[[{\"dns\": \"${owner_dns}\"}, {\"device_port\": \"${owner_port}\"}, {\"protocol\": \"${owner_protocol}\"}, {\"ip\": \"${owner_ip}\"}, {\"owner_port\": \"${owner_port}\"}, {\"rv_bypass\": true}]]"
   set_or_update_rendezvous_info "${manufacturer_url}" "${rv_info}"
 
   log_info "Run Device Initialization"

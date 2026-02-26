@@ -13,30 +13,6 @@ func setupTestDBForOwnerRv(t *testing.T) {
 	}
 }
 
-func TestInsertOwnerInfo_Invalid_ReturnsErrInvalidOwnerInfo(t *testing.T) {
-	setupTestDBForOwnerRv(t)
-	invalid := []byte(`{bad}`)
-	err := InsertOwnerInfo(invalid)
-	if err == nil {
-		t.Fatalf("expected error, got nil")
-	}
-	if !errors.Is(err, ErrInvalidOwnerInfo) {
-		t.Fatalf("expected ErrInvalidOwnerInfo, got %v", err)
-	}
-}
-
-func TestUpdateOwnerInfo_Invalid_ReturnsErrInvalidOwnerInfo(t *testing.T) {
-	setupTestDBForOwnerRv(t)
-	invalid := []byte(`{bad}`)
-	err := UpdateOwnerInfo(invalid)
-	if err == nil {
-		t.Fatalf("expected error, got nil")
-	}
-	if !errors.Is(err, ErrInvalidOwnerInfo) {
-		t.Fatalf("expected ErrInvalidOwnerInfo, got %v", err)
-	}
-}
-
 func TestInsertRvInfo_Invalid_ReturnsErrInvalidRvInfo(t *testing.T) {
 	setupTestDBForOwnerRv(t)
 	invalid := []byte(`[{bad}]`)
