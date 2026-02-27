@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"math"
 	"net"
-	"strconv"
 
 	"github.com/fido-device-onboard/go-fdo/cbor"
 	"github.com/fido-device-onboard/go-fdo/protocol"
@@ -184,7 +183,7 @@ func FetchOwnerInfo() ([]protocol.RvTO2Addr, error) {
 
 func InsertRvInfo(data []byte) error {
 	// check the data can be parsed into [][]protocol.RvInstruction
-	if _, err := parseHumanReadableRvJSON(data); err != nil {
+	if _, err := parseOpenAPIRvJSON(data); err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidRvInfo, err)
 	}
 
@@ -204,7 +203,7 @@ func InsertRvInfo(data []byte) error {
 
 func UpdateRvInfo(data []byte) error {
 	// check the data can be parsed into [][]protocol.RvInstruction
-	if _, err := parseHumanReadableRvJSON(data); err != nil {
+	if _, err := parseOpenAPIRvJSON(data); err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidRvInfo, err)
 	}
 
@@ -259,7 +258,7 @@ func FetchRvInfo() ([][]protocol.RvInstruction, error) {
 	if err != nil {
 		return nil, err
 	}
-	return parseHumanReadableRvJSON(rvInfo)
+	return parseOpenAPIRvJSON(rvInfo)
 }
 
 func encodeRvValue(rvVar protocol.RvVar, val any) ([]byte, error) {
@@ -296,199 +295,319 @@ func encodeRvValue(rvVar protocol.RvVar, val any) ([]byte, error) {
 	}
 }
 
-// parseHumanReadableRvJSON parses a JSON like
-// [{"dns":"fdo.example.com","device_port":"8082","owner_port":"8082","protocol":"http","ip":"127.0.0.1"}]
-// into [][]protocol.RvInstruction. It maps human-readable keys to RV variables
-// and converts protocol strings to the appropriate numeric code.
-func parseHumanReadableRvJSON(rawJSON []byte) ([][]protocol.RvInstruction, error) {
-	type rvHuman struct {
-		DNS          string  `json:"dns"`
-		IP           string  `json:"ip"`
-		Protocol     string  `json:"protocol"`
-		Medium       string  `json:"medium"`
-		DevicePort   string  `json:"device_port"`
-		OwnerPort    string  `json:"owner_port"`
-		WifiSSID     string  `json:"wifi_ssid"`
-		WifiPW       string  `json:"wifi_pw"`
-		DevOnly      bool    `json:"dev_only"`
-		OwnerOnly    bool    `json:"owner_only"`
-		RvBypass     bool    `json:"rv_bypass"`
-		DelaySeconds *uint32 `json:"delay_seconds"`
-		SvCertHash   string  `json:"sv_cert_hash"`
-		ClCertHash   string  `json:"cl_cert_hash"`
-		UserInput    string  `json:"user_input"`
-		ExtRV        string  `json:"ext_rv"`
-	}
-	var items []rvHuman
-	if err := json.Unmarshal(rawJSON, &items); err != nil {
-		return nil, fmt.Errorf("invalid rvinfo JSON: %w", err)
+// parseOpenAPIRvJSON parses OpenAPI-formatted RvInfo JSON into [][]protocol.RvInstruction.
+//
+// Expected format (array of arrays of single-key objects):
+//
+//	[
+//	  [
+//	    {"dns": "rendezvous.example.com"},
+//	    {"protocol": "http"},
+//	    {"owner_port": 8080}
+//	  ],
+//	  [
+//	    {"ip": "192.168.1.100"},
+//	    {"protocol": "https"},
+//	    {"owner_port": 8443}
+//	  ]
+//	]
+//
+// Each outer array element is an RV directive (fallback options).
+// Each inner array element is a single instruction (key-value pair).
+// This format aligns with the OpenAPI specification and FDO protocol CBOR structure.
+func parseOpenAPIRvJSON(rawJSON []byte) ([][]protocol.RvInstruction, error) {
+	// Parse as array of arrays of single-key objects
+	var directives [][]map[string]interface{}
+	if err := json.Unmarshal(rawJSON, &directives); err != nil {
+		return nil, fmt.Errorf("invalid rvinfo JSON (expected array of arrays): %w", err)
 	}
 
-	out := make([][]protocol.RvInstruction, 0, len(items))
-	for i, item := range items {
-		group := make([]protocol.RvInstruction, 0)
+	out := make([][]protocol.RvInstruction, 0, len(directives))
+
+	for directiveIdx, instructions := range directives {
+		group := make([]protocol.RvInstruction, 0, len(instructions))
+		hasDNSorIP := false
+
+		for instrIdx, instruction := range instructions {
+			// Each instruction should be a single-key object
+			if len(instruction) != 1 {
+				return nil, fmt.Errorf("rvinfo[%d][%d]: each instruction must be a single-key object, got %d keys",
+					directiveIdx, instrIdx, len(instruction))
+			}
+
+			// Extract the single key-value pair
+			var key string
+			var value interface{}
+			for k, v := range instruction {
+				key = k
+				value = v
+				break
+			}
+
+			// Map key to protocol instruction and encode value
+			rvInstr, err := parseRvInstruction(key, value)
+			if err != nil {
+				return nil, fmt.Errorf("rvinfo[%d][%d]: %w", directiveIdx, instrIdx, err)
+			}
+
+			// Track if we have DNS or IP
+			if rvInstr.Variable == protocol.RVDns || rvInstr.Variable == protocol.RVIPAddress {
+				hasDNSorIP = true
+			}
+
+			group = append(group, *rvInstr)
+		}
 
 		// Spec requires at least one of DNS or IP to be present for an RV entry
-		if item.DNS == "" && item.IP == "" {
-			return nil, fmt.Errorf("rvinfo[%d]: at least one of dns or ip must be specified", i)
-		}
-
-		if item.DNS != "" {
-			enc, err := encodeRvValue(protocol.RVDns, item.DNS)
-			if err != nil {
-				return nil, err
-			}
-			group = append(group, protocol.RvInstruction{Variable: protocol.RVDns, Value: enc})
-		}
-		if item.IP != "" {
-			enc, err := encodeRvValue(protocol.RVIPAddress, item.IP)
-			if err != nil {
-				return nil, err
-			}
-			group = append(group, protocol.RvInstruction{Variable: protocol.RVIPAddress, Value: enc})
-		}
-		if item.Protocol != "" {
-			code, err := protocolCodeFromString(item.Protocol)
-			if err != nil {
-				return nil, err
-			}
-			enc, err := encodeRvValue(protocol.RVProtocol, uint8(code))
-			if err != nil {
-				return nil, err
-			}
-			group = append(group, protocol.RvInstruction{Variable: protocol.RVProtocol, Value: enc})
-		}
-		if item.Medium != "" {
-			m, err := parseMediumValue(item.Medium)
-			if err != nil {
-				return nil, fmt.Errorf("medium: %w", err)
-			}
-			enc, err := encodeRvValue(protocol.RVMedium, uint8(m))
-			if err != nil {
-				return nil, err
-			}
-			group = append(group, protocol.RvInstruction{Variable: protocol.RVMedium, Value: enc})
-		}
-		if item.DevicePort != "" {
-			num, err := parsePortValue(item.DevicePort)
-			if err != nil {
-				return nil, fmt.Errorf("device_port: %w", err)
-			}
-			enc, err := encodeRvValue(protocol.RVDevPort, num)
-			if err != nil {
-				return nil, err
-			}
-			group = append(group, protocol.RvInstruction{Variable: protocol.RVDevPort, Value: enc})
-		}
-		if item.OwnerPort != "" {
-			num, err := parsePortValue(item.OwnerPort)
-			if err != nil {
-				return nil, fmt.Errorf("owner_port: %w", err)
-			}
-			enc, err := encodeRvValue(protocol.RVOwnerPort, num)
-			if err != nil {
-				return nil, err
-			}
-			group = append(group, protocol.RvInstruction{Variable: protocol.RVOwnerPort, Value: enc})
-		}
-		if item.WifiSSID != "" {
-			enc, err := encodeRvValue(protocol.RVWifiSsid, item.WifiSSID)
-			if err != nil {
-				return nil, err
-			}
-			group = append(group, protocol.RvInstruction{Variable: protocol.RVWifiSsid, Value: enc})
-		}
-		if item.WifiPW != "" {
-			enc, err := encodeRvValue(protocol.RVWifiPw, item.WifiPW)
-			if err != nil {
-				return nil, err
-			}
-			group = append(group, protocol.RvInstruction{Variable: protocol.RVWifiPw, Value: enc})
-		}
-		if item.DevOnly {
-			group = append(group, protocol.RvInstruction{Variable: protocol.RVDevOnly})
-		}
-		if item.OwnerOnly {
-			group = append(group, protocol.RvInstruction{Variable: protocol.RVOwnerOnly})
-		}
-		if item.RvBypass {
-			group = append(group, protocol.RvInstruction{Variable: protocol.RVBypass})
-		}
-		if item.DelaySeconds != nil {
-			secs := uint64(*item.DelaySeconds)
-			enc, err := encodeRvValue(protocol.RVDelaysec, secs)
-			if err != nil {
-				return nil, err
-			}
-			group = append(group, protocol.RvInstruction{Variable: protocol.RVDelaysec, Value: enc})
-		}
-		if item.SvCertHash != "" {
-			b, err := hex.DecodeString(item.SvCertHash)
-			if err != nil {
-				return nil, fmt.Errorf("sv_cert_hash: %w", err)
-			}
-			enc, err := cbor.Marshal(b)
-			if err != nil {
-				return nil, err
-			}
-			group = append(group, protocol.RvInstruction{Variable: protocol.RVSvCertHash, Value: enc})
-		}
-		if item.ClCertHash != "" {
-			b, err := hex.DecodeString(item.ClCertHash)
-			if err != nil {
-				return nil, fmt.Errorf("cl_cert_hash: %w", err)
-			}
-			enc, err := cbor.Marshal(b)
-			if err != nil {
-				return nil, err
-			}
-			group = append(group, protocol.RvInstruction{Variable: protocol.RVClCertHash, Value: enc})
-		}
-		if item.UserInput != "" {
-			enc, err := encodeRvValue(protocol.RVUserInput, item.UserInput)
-			if err != nil {
-				return nil, err
-			}
-			group = append(group, protocol.RvInstruction{Variable: protocol.RVUserInput, Value: enc})
-		}
-		if item.ExtRV != "" {
-			enc, err := encodeRvValue(protocol.RVExtRV, item.ExtRV)
-			if err != nil {
-				return nil, err
-			}
-			group = append(group, protocol.RvInstruction{Variable: protocol.RVExtRV, Value: enc})
+		if !hasDNSorIP {
+			return nil, fmt.Errorf("rvinfo[%d]: at least one of dns or ip must be specified", directiveIdx)
 		}
 
 		out = append(out, group)
 	}
+
 	return out, nil
 }
 
-func parsePortValue(v any) (uint16, error) {
-	switch t := v.(type) {
-	case float64:
-		if t != math.Trunc(t) {
-			return 0, fmt.Errorf("port must be an integer, got %v", t)
+// parseRvInstruction converts a single key-value pair into a protocol.RvInstruction
+func parseRvInstruction(key string, value interface{}) (*protocol.RvInstruction, error) {
+	switch key {
+	case "dns":
+		str, ok := value.(string)
+		if !ok {
+			return nil, fmt.Errorf("dns must be a string, got %T", value)
 		}
-		if t < 1 || t > 65535 {
-			return 0, fmt.Errorf("port out of range: %v", t)
-		}
-		return uint16(t), nil
-	case string:
-		if t == "" {
-			return 0, fmt.Errorf("empty port")
-		}
-		i, err := strconv.Atoi(t)
+		enc, err := encodeRvValue(protocol.RVDns, str)
 		if err != nil {
-			return 0, err
+			return nil, err
 		}
-		if i < 1 || i > 65535 {
-			return 0, fmt.Errorf("port out of range: %d", i)
+		return &protocol.RvInstruction{Variable: protocol.RVDns, Value: enc}, nil
+
+	case "ip":
+		str, ok := value.(string)
+		if !ok {
+			return nil, fmt.Errorf("ip must be a string, got %T", value)
 		}
-		return uint16(i), nil
+		enc, err := encodeRvValue(protocol.RVIPAddress, str)
+		if err != nil {
+			return nil, err
+		}
+		return &protocol.RvInstruction{Variable: protocol.RVIPAddress, Value: enc}, nil
+
+	case "protocol":
+		str, ok := value.(string)
+		if !ok {
+			return nil, fmt.Errorf("protocol must be a string, got %T", value)
+		}
+		code, err := protocolCodeFromString(str)
+		if err != nil {
+			return nil, err
+		}
+		enc, err := encodeRvValue(protocol.RVProtocol, uint8(code))
+		if err != nil {
+			return nil, err
+		}
+		return &protocol.RvInstruction{Variable: protocol.RVProtocol, Value: enc}, nil
+
+	case "medium":
+		str, ok := value.(string)
+		if !ok {
+			return nil, fmt.Errorf("medium must be a string, got %T", value)
+		}
+		m, err := parseMediumValue(str)
+		if err != nil {
+			return nil, err
+		}
+		enc, err := encodeRvValue(protocol.RVMedium, uint8(m))
+		if err != nil {
+			return nil, err
+		}
+		return &protocol.RvInstruction{Variable: protocol.RVMedium, Value: enc}, nil
+
+	case "device_port":
+		num, err := parsePortValue(value)
+		if err != nil {
+			return nil, fmt.Errorf("device_port: %w", err)
+		}
+		enc, err := encodeRvValue(protocol.RVDevPort, num)
+		if err != nil {
+			return nil, err
+		}
+		return &protocol.RvInstruction{Variable: protocol.RVDevPort, Value: enc}, nil
+
+	case "owner_port":
+		num, err := parsePortValue(value)
+		if err != nil {
+			return nil, fmt.Errorf("owner_port: %w", err)
+		}
+		enc, err := encodeRvValue(protocol.RVOwnerPort, num)
+		if err != nil {
+			return nil, err
+		}
+		return &protocol.RvInstruction{Variable: protocol.RVOwnerPort, Value: enc}, nil
+
+	case "wifi_ssid":
+		str, ok := value.(string)
+		if !ok {
+			return nil, fmt.Errorf("wifi_ssid must be a string, got %T", value)
+		}
+		enc, err := encodeRvValue(protocol.RVWifiSsid, str)
+		if err != nil {
+			return nil, err
+		}
+		return &protocol.RvInstruction{Variable: protocol.RVWifiSsid, Value: enc}, nil
+
+	case "wifi_pw":
+		str, ok := value.(string)
+		if !ok {
+			return nil, fmt.Errorf("wifi_pw must be a string, got %T", value)
+		}
+		enc, err := encodeRvValue(protocol.RVWifiPw, str)
+		if err != nil {
+			return nil, err
+		}
+		return &protocol.RvInstruction{Variable: protocol.RVWifiPw, Value: enc}, nil
+
+	case "dev_only":
+		b, ok := value.(bool)
+		if !ok {
+			return nil, fmt.Errorf("dev_only must be a boolean, got %T", value)
+		}
+		if b {
+			return &protocol.RvInstruction{Variable: protocol.RVDevOnly}, nil
+		}
+		return nil, fmt.Errorf("dev_only is false, should be omitted instead")
+
+	case "owner_only":
+		b, ok := value.(bool)
+		if !ok {
+			return nil, fmt.Errorf("owner_only must be a boolean, got %T", value)
+		}
+		if b {
+			return &protocol.RvInstruction{Variable: protocol.RVOwnerOnly}, nil
+		}
+		return nil, fmt.Errorf("owner_only is false, should be omitted instead")
+
+	case "rv_bypass":
+		b, ok := value.(bool)
+		if !ok {
+			return nil, fmt.Errorf("rv_bypass must be a boolean, got %T", value)
+		}
+		if b {
+			return &protocol.RvInstruction{Variable: protocol.RVBypass}, nil
+		}
+		return nil, fmt.Errorf("rv_bypass is false, should be omitted instead")
+
+	case "delay_seconds":
+		// OpenAPI spec requires integer type
+		num, ok := value.(float64)
+		if !ok {
+			return nil, fmt.Errorf("delay_seconds must be an integer, got %T", value)
+		}
+
+		// Ensure it's a whole number
+		if num != math.Trunc(num) {
+			return nil, fmt.Errorf("delay_seconds must be a whole number, got %v", num)
+		}
+
+		// Validate non-negative
+		if num < 0 {
+			return nil, fmt.Errorf("delay_seconds must be non-negative, got %v", num)
+		}
+
+		secs := uint32(num)
+		enc, err := encodeRvValue(protocol.RVDelaysec, uint64(secs))
+		if err != nil {
+			return nil, err
+		}
+		return &protocol.RvInstruction{Variable: protocol.RVDelaysec, Value: enc}, nil
+
+	case "sv_cert_hash":
+		str, ok := value.(string)
+		if !ok {
+			return nil, fmt.Errorf("sv_cert_hash must be a string, got %T", value)
+		}
+		b, err := hex.DecodeString(str)
+		if err != nil {
+			return nil, fmt.Errorf("sv_cert_hash: %w", err)
+		}
+		enc, err := cbor.Marshal(b)
+		if err != nil {
+			return nil, err
+		}
+		return &protocol.RvInstruction{Variable: protocol.RVSvCertHash, Value: enc}, nil
+
+	case "cl_cert_hash":
+		str, ok := value.(string)
+		if !ok {
+			return nil, fmt.Errorf("cl_cert_hash must be a string, got %T", value)
+		}
+		b, err := hex.DecodeString(str)
+		if err != nil {
+			return nil, fmt.Errorf("cl_cert_hash: %w", err)
+		}
+		enc, err := cbor.Marshal(b)
+		if err != nil {
+			return nil, err
+		}
+		return &protocol.RvInstruction{Variable: protocol.RVClCertHash, Value: enc}, nil
+
+	case "user_input":
+		b, ok := value.(bool)
+		if !ok {
+			return nil, fmt.Errorf("user_input must be a boolean, got %T", value)
+		}
+		if b {
+			// Only include instruction if true (per FDO spec)
+			return &protocol.RvInstruction{Variable: protocol.RVUserInput}, nil
+		}
+		return nil, fmt.Errorf("user_input is false, should be omitted instead")
+
+	case "ext_rv":
+		arr, ok := value.([]interface{})
+		if !ok {
+			return nil, fmt.Errorf("ext_rv must be an array, got %T", value)
+		}
+		// Convert []interface{} to []string
+		strArr := make([]string, len(arr))
+		for i, v := range arr {
+			s, ok := v.(string)
+			if !ok {
+				return nil, fmt.Errorf("ext_rv[%d] must be a string, got %T", i, v)
+			}
+			strArr[i] = s
+		}
+		enc, err := encodeRvValue(protocol.RVExtRV, strArr)
+		if err != nil {
+			return nil, err
+		}
+		return &protocol.RvInstruction{Variable: protocol.RVExtRV, Value: enc}, nil
+
 	default:
-		return 0, fmt.Errorf("unsupported type %T", v)
+		return nil, fmt.Errorf("unknown instruction key: %q", key)
 	}
+}
+
+
+func parsePortValue(v any) (uint16, error) {
+	// Only accept integer (float64 in JSON)
+	// OpenAPI spec requires integer type for ports
+	f, ok := v.(float64)
+	if !ok {
+		return 0, fmt.Errorf("port must be an integer, got %T", v)
+	}
+
+	// Ensure it's a whole number (not 8080.5)
+	if f != math.Trunc(f) {
+		return 0, fmt.Errorf("port must be a whole number, got %v", f)
+	}
+
+	// Validate port range (1-65535)
+	if f < 1 || f > 65535 {
+		return 0, fmt.Errorf("port must be between 1 and 65535, got %v", f)
+	}
+
+	return uint16(f), nil
 }
 
 func protocolCodeFromString(s string) (uint8, error) {

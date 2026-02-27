@@ -15,7 +15,7 @@ func TestRvInfo_PostConflictOnDuplicate(t *testing.T) {
 	setupTestDB(t)
 
 	handler := handlers.RvInfoHandler()
-	body := []byte(`[{"dns":"rv.example","device_port":"8082","owner_port":"8082","protocol":"http"}]`)
+	body := []byte(`[[{"dns":"rv.example"},{"device_port":8082},{"owner_port":8082},{"protocol":"http"}]]`)
 
 	// First POST should create (201)
 	req1 := httptest.NewRequest(http.MethodPost, "/api/v1/rv", bytes.NewReader(body))
@@ -57,19 +57,19 @@ func TestRvInfo_Put404ThenCreateThenUpdateAndGet(t *testing.T) {
 	}
 
 	// PUT before create -> 404
-	putBody := []byte(`[{"dns":"rv.example","device_port":"8082","owner_port":"8082","protocol":"http"}]`)
+	putBody := []byte(`[[{"dns":"rv.example"},{"device_port":8082},{"owner_port":8082},{"protocol":"http"}]]`)
 	if rec := put(putBody); rec.Code != http.StatusNotFound {
 		t.Fatalf("expected 404 on PUT before create, got %d", rec.Code)
 	}
 
 	// POST create -> 201
-	postBody := []byte(`[{"dns":"rv.example","device_port":"8082","owner_port":"8082","protocol":"http"}]`)
+	postBody := []byte(`[[{"dns":"rv.example"},{"device_port":8082},{"owner_port":8082},{"protocol":"http"}]]`)
 	if rec := post(postBody); rec.Code != http.StatusCreated {
 		t.Fatalf("expected 201 on POST create, got %d", rec.Code)
 	}
 
 	// PUT update -> 200
-	updateBody := []byte(`[{"dns":"rv-updated","device_port":"9090","owner_port":"9090","protocol":"http"}]`)
+	updateBody := []byte(`[[{"dns":"rv-updated"},{"device_port":9090},{"owner_port":9090},{"protocol":"http"}]]`)
 	if rec := put(updateBody); rec.Code != http.StatusOK {
 		t.Fatalf("expected 200 on PUT update, got %d", rec.Code)
 	}
