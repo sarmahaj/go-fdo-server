@@ -61,11 +61,11 @@ tags:
 paths:
   /health:
     $ref: 'health.yaml#/paths/~1health'
-  /v1/vouchers:
+  /v2/vouchers:
     $ref: 'voucher.yaml#/paths/~1v1~1vouchers'
-  /v1/vouchers/{guid}:
+  /v2/vouchers/{guid}:
     $ref: 'voucher.yaml#/paths/~1v1~1vouchers~1{guid}'
-  /v1/vouchers/{guid}/extend:
+  /v2/vouchers/{guid}/extend:
     $ref: 'voucher.yaml#/paths/~1v1~1vouchers~1{guid}~1extend'
-  /v1/rvinfo:
-    $ref: 'rvinfo.yaml#/paths/~1v1~1rvinfo'
+  /v2/rvinfo:
+    $ref: 'rvinfo.yaml#/paths/~1rvinfo'

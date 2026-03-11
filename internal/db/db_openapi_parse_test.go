@@ -112,9 +112,9 @@ func TestParseOpenAPIRvJSON_Valid(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			result, err := parseOpenAPIRvJSON([]byte(tc.jsonBody))
+			result, err := ParseOpenAPIRvJSON([]byte(tc.jsonBody))
 			if err != nil {
-				t.Fatalf("parseOpenAPIRvJSON failed: %v", err)
+				t.Fatalf("ParseOpenAPIRvJSON failed: %v", err)
 			}
 
 			if len(result) == 0 {
@@ -240,7 +240,7 @@ func TestParseOpenAPIRvJSON_Invalid(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := parseOpenAPIRvJSON([]byte(tc.jsonBody))
+			_, err := ParseOpenAPIRvJSON([]byte(tc.jsonBody))
 			if err == nil {
 				t.Fatalf("expected error, got nil")
 			}
@@ -265,9 +265,9 @@ func TestParseOpenAPIRvJSON_ProtocolValues(t *testing.T) {
 	for protoStr, expectedCode := range protocols {
 		t.Run("protocol_"+protoStr, func(t *testing.T) {
 			jsonBody := `[[{"dns":"rv.com"}, {"protocol":"` + protoStr + `"}]]`
-			result, err := parseOpenAPIRvJSON([]byte(jsonBody))
+			result, err := ParseOpenAPIRvJSON([]byte(jsonBody))
 			if err != nil {
-				t.Fatalf("parseOpenAPIRvJSON failed: %v", err)
+				t.Fatalf("ParseOpenAPIRvJSON failed: %v", err)
 			}
 
 			// Find protocol instruction

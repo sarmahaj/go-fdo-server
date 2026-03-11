@@ -11,14 +11,16 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/fido-device-onboard/go-fdo-server/internal/db"
 	"github.com/fido-device-onboard/go-fdo-server/internal/handlers/components"
+	"github.com/fido-device-onboard/go-fdo-server/internal/state"
 )
 
-type Server struct{}
+type Server struct {
+	RvInfo *state.RvInfoState
+}
 
-func NewServer() Server {
-	return Server{}
+func NewServer(rvInfoState *state.RvInfoState) Server {
+	return Server{RvInfo: rvInfoState}
 }
 
 // Make sure we conform to StrictServerInterface
@@ -28,8 +30,8 @@ var _ StrictServerInterface = (*Server)(nil)
 func (s *Server) GetRendezvousInfo(ctx context.Context, request GetRendezvousInfoRequestObject) (GetRendezvousInfoResponseObject, error) {
 	slog.Debug("GetRendezvousInfo called")
 
-	// Fetch RV info from database
-	rvInfoJSON, err := db.FetchRvInfoJSON()
+	// Fetch RV info from state
+	rvInfoJSON, err := s.RvInfo.FetchRvInfoJSON(ctx)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			// Return empty array if no configuration set
@@ -75,17 +77,17 @@ func (s *Server) UpdateRendezvousInfo(ctx context.Context, request UpdateRendezv
 	}
 
 	// Try to update first
-	err = db.UpdateRvInfo(rvInfoJSON)
+	err = s.RvInfo.UpdateRvInfo(ctx, rvInfoJSON)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		// No existing record, insert instead
-		if err := db.InsertRvInfo(rvInfoJSON); err != nil {
+		if err := s.RvInfo.InsertRvInfo(ctx, rvInfoJSON); err != nil {
 			slog.Error("failed to insert RV info", "error", err)
 			return UpdateRendezvousInfo500JSONResponse{
 				components.InternalServerError{Message: "failed to save rendezvous info"},
 			}, nil
 		}
 	} else if err != nil {
-		if errors.Is(err, db.ErrInvalidRvInfo) {
+		if errors.Is(err, state.ErrInvalidRvInfo) {
 			slog.Warn("invalid RV info provided", "error", err)
 			return UpdateRendezvousInfo400JSONResponse{
 				components.BadRequest{Message: "invalid rendezvous info: " + err.Error()},
@@ -106,7 +108,7 @@ func (s *Server) DeleteRendezvousInfo(ctx context.Context, request DeleteRendezv
 	slog.Debug("DeleteRendezvousInfo called")
 
 	// Fetch current RV info before deletion (to return it)
-	rvInfoJSON, err := db.FetchRvInfoJSON()
+	rvInfoJSON, err := s.RvInfo.FetchRvInfoJSON(ctx)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			// No configuration set, return empty array
@@ -128,8 +130,8 @@ func (s *Server) DeleteRendezvousInfo(ctx context.Context, request DeleteRendezv
 		}, nil
 	}
 
-	// Delete from database
-	if err := db.DeleteRvInfo(); err != nil {
+	// Delete from state
+	if err := s.RvInfo.DeleteRvInfo(ctx); err != nil {
 		slog.Error("failed to delete RV info", "error", err)
 		return DeleteRendezvousInfo500JSONResponse{
 			components.InternalServerError{Message: "failed to delete rendezvous info"},

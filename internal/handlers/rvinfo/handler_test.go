@@ -11,10 +11,11 @@ import (
 
 	"github.com/fido-device-onboard/go-fdo-server/internal/db"
 	"github.com/fido-device-onboard/go-fdo-server/internal/handlers/components"
+	"github.com/fido-device-onboard/go-fdo-server/internal/state"
 )
 
-// setupTestDB creates a temporary SQLite database for testing
-func setupTestDB(t *testing.T) *db.State {
+// setupTestDB creates a temporary SQLite database and RvInfo state for testing
+func setupTestDB(t *testing.T) *state.RvInfoState {
 	t.Helper()
 	tmpFile, err := os.CreateTemp("", "rvinfo_test_*.db")
 	if err != nil {
@@ -23,20 +24,25 @@ func setupTestDB(t *testing.T) *db.State {
 	tmpFile.Close()
 	t.Cleanup(func() { os.Remove(tmpFile.Name()) })
 
-	state, err := db.InitDb("sqlite", tmpFile.Name())
+	dbState, err := db.InitDb("sqlite", tmpFile.Name())
 	if err != nil {
 		t.Fatalf("Failed to initialize test database: %v", err)
 	}
-	t.Cleanup(func() { state.Close() })
+	t.Cleanup(func() { dbState.Close() })
 
-	return state
+	rvInfoState, err := state.InitRvInfoDB(dbState.DB)
+	if err != nil {
+		t.Fatalf("Failed to initialize RvInfo state: %v", err)
+	}
+
+	return rvInfoState
 }
 
 // TestGetRendezvousInfo_Empty tests retrieving RV info when none exists
 func TestGetRendezvousInfo_Empty(t *testing.T) {
-	setupTestDB(t)
+	rvInfoState := setupTestDB(t)
 
-	server := NewServer()
+	server := NewServer(rvInfoState)
 	ctx := context.Background()
 	req := GetRendezvousInfoRequestObject{}
 
@@ -58,9 +64,9 @@ func TestGetRendezvousInfo_Empty(t *testing.T) {
 
 // TestDeleteRendezvousInfo_NotFound tests deleting when no config exists
 func TestDeleteRendezvousInfo_NotFound(t *testing.T) {
-	setupTestDB(t)
+	rvInfoState := setupTestDB(t)
 
-	server := NewServer()
+	server := NewServer(rvInfoState)
 	ctx := context.Background()
 
 	// Try to delete when nothing exists
@@ -82,9 +88,9 @@ func TestDeleteRendezvousInfo_NotFound(t *testing.T) {
 
 // TestUpdateRendezvousInfo_Create tests creating new RV info
 func TestUpdateRendezvousInfo_Create(t *testing.T) {
-	setupTestDB(t)
+	rvInfoState := setupTestDB(t)
 
-	server := NewServer()
+	server := NewServer(rvInfoState)
 	ctx := context.Background()
 
 	// Valid RV info in OpenAPI format (array of arrays of single-key objects)
@@ -125,9 +131,9 @@ func TestUpdateRendezvousInfo_Create(t *testing.T) {
 
 // TestGetRendezvousInfo_WithData tests retrieving RV info when it exists
 func TestGetRendezvousInfo_WithData(t *testing.T) {
-	setupTestDB(t)
+	rvInfoState := setupTestDB(t)
 
-	server := NewServer()
+	server := NewServer(rvInfoState)
 	ctx := context.Background()
 
 	// First create RV info
@@ -176,9 +182,9 @@ func TestGetRendezvousInfo_WithData(t *testing.T) {
 
 // TestUpdateRendezvousInfo_InvalidData tests validation error handling
 func TestUpdateRendezvousInfo_InvalidData(t *testing.T) {
-	setupTestDB(t)
+	rvInfoState := setupTestDB(t)
 
-	server := NewServer()
+	server := NewServer(rvInfoState)
 	ctx := context.Background()
 
 	// Invalid RV info - missing DNS/IP (required by spec)

@@ -24,6 +24,7 @@ import (
 	"golang.org/x/time/rate"
 
 	"github.com/fido-device-onboard/go-fdo"
+	"github.com/fido-device-onboard/go-fdo-server/api/handlers"
 	"github.com/fido-device-onboard/go-fdo-server/internal/db"
 	"github.com/fido-device-onboard/go-fdo-server/internal/handlers/health"
 	"github.com/fido-device-onboard/go-fdo-server/internal/handlers/rvinfo"
@@ -283,18 +284,31 @@ func serveManufacturing(config *ManufacturingServerConfig) error {
 	healthStrictHandler := health.NewStrictHandler(&healthServer, nil)
 	health.HandlerFromMux(healthStrictHandler, rootMux)
 
-	// Create management API mux for RVInfo handler
-	mgmtAPIServeMux := http.NewServeMux()
+	// === V1 API (Old handlers for backward compatibility) ===
+	mgmtAPIServeMuxV1 := http.NewServeMux()
+	mgmtAPIServeMuxV1.HandleFunc("GET /vouchers", handlers.GetVoucherHandler)
+	mgmtAPIServeMuxV1.HandleFunc("GET /vouchers/{guid}", handlers.GetVoucherByGUIDHandler)
+	mgmtAPIServeMuxV1.Handle("/rvinfo", handlers.RvInfoHandler())
+	mgmtAPIHandlerV1 := rateLimitMiddleware(rate.NewLimiter(2, 10),
+		bodySizeMiddleware(1<<20, mgmtAPIServeMuxV1))
+	rootMux.Handle("/api/v1/", http.StripPrefix("/api/v1", mgmtAPIHandlerV1))
 
-	// RVInfo handler
-	rvInfoServer := rvinfo.NewServer()
+	// === V2 API (New OpenAPI handlers) ===
+	// Initialize RvInfo state
+	rvInfoState, err := state.InitRvInfoDB(dbState.DB)
+	if err != nil {
+		slog.Error("failed to initialize RvInfo state", "err", err)
+		return err
+	}
+
+	mgmtAPIServeMuxV2 := http.NewServeMux()
+	rvInfoServer := rvinfo.NewServer(rvInfoState)
 	rvInfoStrictHandler := rvinfo.NewStrictHandler(&rvInfoServer, nil)
-	rvinfo.HandlerFromMux(rvInfoStrictHandler, mgmtAPIServeMux)
-
-	// Apply middleware to management APIs
-	mgmtAPIHandler := rateLimitMiddleware(rate.NewLimiter(2, 10),
-		bodySizeMiddleware(1<<20, mgmtAPIServeMux))
-	rootMux.Handle("/api/v1/", http.StripPrefix("/api", mgmtAPIHandler))
+	rvinfo.HandlerFromMux(rvInfoStrictHandler, mgmtAPIServeMuxV2)
+	// Future: voucher.HandlerFromMux(..., mgmtAPIServeMuxV2)  // Miguel's PR #193
+	mgmtAPIHandlerV2 := rateLimitMiddleware(rate.NewLimiter(2, 10),
+		bodySizeMiddleware(1<<20, mgmtAPIServeMuxV2))
+	rootMux.Handle("/api/v2/", http.StripPrefix("/api/v2", mgmtAPIHandlerV2))
 
 	// Listen and serve
 	server := NewManufacturingServer(config.HTTP, rootMux)

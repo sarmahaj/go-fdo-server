@@ -185,7 +185,7 @@ func FetchOwnerInfo() ([]protocol.RvTO2Addr, error) {
 
 func InsertRvInfo(data []byte) error {
 	// check the data can be parsed into [][]protocol.RvInstruction
-	if _, err := parseOpenAPIRvJSON(data); err != nil {
+	if _, err := ParseOpenAPIRvJSON(data); err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidRvInfo, err)
 	}
 
@@ -205,7 +205,7 @@ func InsertRvInfo(data []byte) error {
 
 func UpdateRvInfo(data []byte) error {
 	// check the data can be parsed into [][]protocol.RvInstruction
-	if _, err := parseOpenAPIRvJSON(data); err != nil {
+	if _, err := ParseOpenAPIRvJSON(data); err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidRvInfo, err)
 	}
 
@@ -271,7 +271,7 @@ func FetchRvInfo() ([][]protocol.RvInstruction, error) {
 	if err != nil {
 		return nil, err
 	}
-	return parseOpenAPIRvJSON(rvInfo)
+	return ParseOpenAPIRvJSON(rvInfo)
 }
 
 func encodeRvValue(rvVar protocol.RvVar, val any) ([]byte, error) {
@@ -308,7 +308,7 @@ func encodeRvValue(rvVar protocol.RvVar, val any) ([]byte, error) {
 	}
 }
 
-// parseOpenAPIRvJSON parses OpenAPI-formatted RvInfo JSON into [][]protocol.RvInstruction.
+// ParseOpenAPIRvJSON parses OpenAPI-formatted RvInfo JSON into [][]protocol.RvInstruction.
 //
 // Expected format (array of arrays of single-key objects):
 //
@@ -328,7 +328,8 @@ func encodeRvValue(rvVar protocol.RvVar, val any) ([]byte, error) {
 // Each outer array element is an RV directive (fallback options).
 // Each inner array element is a single instruction (key-value pair).
 // This format aligns with the OpenAPI specification and FDO protocol CBOR structure.
-func parseOpenAPIRvJSON(rawJSON []byte) ([][]protocol.RvInstruction, error) {
+// ParseOpenAPIRvJSON parses OpenAPI format RV info JSON into protocol instructions
+func ParseOpenAPIRvJSON(rawJSON []byte) ([][]protocol.RvInstruction, error) {
 	// Parse as array of arrays of single-key objects
 	var directives [][]map[string]interface{}
 	if err := json.Unmarshal(rawJSON, &directives); err != nil {

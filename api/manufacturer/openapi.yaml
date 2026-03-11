@@ -73,7 +73,7 @@ paths:
                 message: database error
       tags:
         - health
-  /v1/vouchers:
+  /v2/vouchers:
     get:
       operationId: ListOwnershipVouchers
       summary: List all ownership vouchers
@@ -287,7 +287,7 @@ paths:
           $ref: '#/components/responses/InternalServerError'
       tags:
         - voucher
-  '/v1/vouchers/{guid}':
+  '/v2/vouchers/{guid}':
     get:
       operationId: GetOwnershipVoucherByGuid
       summary: Get an ownership voucher by GUID
@@ -403,7 +403,7 @@ paths:
           $ref: '#/components/responses/InternalServerError'
       tags:
         - voucher
-  '/v1/vouchers/{guid}/extend':
+  '/v2/vouchers/{guid}/extend':
     post:
       operationId: ExtendOwnershipVoucher
       summary: Extend an ownership voucher
@@ -482,7 +482,7 @@ paths:
           $ref: '#/components/responses/InternalServerError'
       tags:
         - voucher
-  /v1/rvinfo:
+  /v2/rvinfo:
     get:
       operationId: GetRendezvousInfo
       summary: Get the current RendezvousInfo
