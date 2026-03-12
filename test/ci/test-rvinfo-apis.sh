@@ -66,7 +66,7 @@ run_test() {
   response=$(update_rendezvous_info "${manufacturer_url}" "${initial_rvinfo}")
   log_info "Response: ${response}"
 
-  if ! echo "${response}" | jq -e '.[0] | type == "array"' > /dev/null; then
+  if ! echo "${response}" | jq -e '.[0] | type == "array"' >/dev/null; then
     log_error "Response is not an array of arrays"
     return 1
   fi
@@ -83,7 +83,7 @@ run_test() {
     return 1
   fi
 
-  if ! echo "${response}" | jq -e '.[0][0] | has("dns")' > /dev/null; then
+  if ! echo "${response}" | jq -e '.[0][0] | has("dns")' >/dev/null; then
     log_error "First instruction doesn't have 'dns' key"
     return 1
   fi
@@ -106,7 +106,7 @@ run_test() {
   log_info "Step 6: GET /api/v1/rvinfo - Verify RV bypass"
   response=$(get_rendezvous_info "${manufacturer_url}")
 
-  if ! echo "${response}" | jq -e '.[0][3] | has("rv_bypass")' > /dev/null; then
+  if ! echo "${response}" | jq -e '.[0][3] | has("rv_bypass")' >/dev/null; then
     log_error "Fourth instruction doesn't have 'rv_bypass' key"
     return 1
   fi
@@ -148,13 +148,13 @@ run_test() {
   fi
 
   # Verify first directive has DNS
-  if ! echo "${response}" | jq -e '.[0][0] | has("dns")' > /dev/null; then
+  if ! echo "${response}" | jq -e '.[0][0] | has("dns")' >/dev/null; then
     log_error "First directive should have DNS"
     return 1
   fi
 
   # Verify second directive has IP
-  if ! echo "${response}" | jq -e '.[1][0] | has("ip")' > /dev/null; then
+  if ! echo "${response}" | jq -e '.[1][0] | has("ip")' >/dev/null; then
     log_error "Second directive should have IP"
     return 1
   fi
@@ -166,7 +166,7 @@ run_test() {
   log_info "Response (deleted config): ${response}"
 
   # Verify response contains the deleted configuration
-  if ! echo "${response}" | jq -e 'type == "array"' > /dev/null; then
+  if ! echo "${response}" | jq -e 'type == "array"' >/dev/null; then
     log_error "DELETE should return the deleted configuration"
     return 1
   fi

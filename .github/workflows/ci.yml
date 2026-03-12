@@ -382,7 +382,7 @@ jobs:
           cleanup
 
   test-rvinfo-apis:
-    name: Test RVInfo API Lifecycle
+    name: Test RVInfo API Lifecycle (V1 API)
     runs-on: ubuntu-latest
     steps:
       - name: Install golang
