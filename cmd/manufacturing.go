@@ -284,22 +284,23 @@ func serveManufacturing(config *ManufacturingServerConfig) error {
 	healthStrictHandler := health.NewStrictHandler(&healthServer, nil)
 	health.HandlerFromMux(healthStrictHandler, rootMux)
 
-	// === V1 API (Old handlers for backward compatibility) ===
-	mgmtAPIServeMuxV1 := http.NewServeMux()
-	mgmtAPIServeMuxV1.HandleFunc("GET /vouchers", handlers.GetVoucherHandler)
-	mgmtAPIServeMuxV1.HandleFunc("GET /vouchers/{guid}", handlers.GetVoucherByGUIDHandler)
-	mgmtAPIServeMuxV1.Handle("/rvinfo", handlers.RvInfoHandler())
-	mgmtAPIHandlerV1 := rateLimitMiddleware(rate.NewLimiter(2, 10),
-		bodySizeMiddleware(1<<20, mgmtAPIServeMuxV1))
-	rootMux.Handle("/api/v1/", http.StripPrefix("/api/v1", mgmtAPIHandlerV1))
-
-	// === V2 API (New OpenAPI handlers) ===
-	// Initialize RvInfo state
+	// Initialize RvInfo state (shared between V1 and V2)
 	rvInfoState, err := state.InitRvInfoDB(dbState.DB)
 	if err != nil {
 		slog.Error("failed to initialize RvInfo state", "err", err)
 		return err
 	}
+
+	// === V1 API (Old handlers for backward compatibility) ===
+	mgmtAPIServeMuxV1 := http.NewServeMux()
+	mgmtAPIServeMuxV1.HandleFunc("GET /vouchers", handlers.GetVoucherHandler)
+	mgmtAPIServeMuxV1.HandleFunc("GET /vouchers/{guid}", handlers.GetVoucherByGUIDHandler)
+	mgmtAPIServeMuxV1.Handle("/rvinfo", handlers.RvInfoHandler(rvInfoState))
+	mgmtAPIHandlerV1 := rateLimitMiddleware(rate.NewLimiter(2, 10),
+		bodySizeMiddleware(1<<20, mgmtAPIServeMuxV1))
+	rootMux.Handle("/api/v1/", http.StripPrefix("/api/v1", mgmtAPIHandlerV1))
+
+	// === V2 API (New OpenAPI handlers) ===
 
 	mgmtAPIServeMuxV2 := http.NewServeMux()
 	rvInfoServer := rvinfo.NewServer(rvInfoState)
