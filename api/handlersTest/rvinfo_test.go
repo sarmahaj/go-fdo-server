@@ -74,16 +74,16 @@ func TestRvInfo_Put404ThenCreateThenUpdateAndGet(t *testing.T) {
 		return rec
 	}
 
-	// PUT before create -> 404
+	// PUT before create -> 200 (V1 API: PUT acts as upsert, creates if not exists)
 	putBody := []byte(`[[{"dns":"rv.example"},{"device_port":8082},{"owner_port":8082},{"protocol":"http"}]]`)
-	if rec := put(putBody); rec.Code != http.StatusNotFound {
-		t.Fatalf("expected 404 on PUT before create, got %d", rec.Code)
+	if rec := put(putBody); rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on PUT before create (upsert), got %d", rec.Code)
 	}
 
-	// POST create -> 201
+	// POST after PUT (record exists) -> 409 Conflict
 	postBody := []byte(`[[{"dns":"rv.example"},{"device_port":8082},{"owner_port":8082},{"protocol":"http"}]]`)
-	if rec := post(postBody); rec.Code != http.StatusCreated {
-		t.Fatalf("expected 201 on POST create, got %d", rec.Code)
+	if rec := post(postBody); rec.Code != http.StatusConflict {
+		t.Fatalf("expected 409 on POST after record exists, got %d", rec.Code)
 	}
 
 	// PUT update -> 200
