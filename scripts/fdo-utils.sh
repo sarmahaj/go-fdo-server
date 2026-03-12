@@ -10,21 +10,21 @@ get_rendezvous_info() {
 
 set_rendezvous_info() {
   local manufacturer_url=$1
-  local rendezvous_info_json=$2
+  local rv_info_v1=$2
   curl --fail --verbose --silent --insecure \
     --request POST \
     --header 'Content-Type: application/json' \
-    --data-raw "${rendezvous_info_json}" \
+    --data-raw "${rv_info_v1}" \
     "${manufacturer_url}/api/v1/rvinfo"
 }
 
 update_rendezvous_info() {
   local manufacturer_url=$1
-  local rendezvous_info_json=$2
+  local rv_info_v1=$2
   curl --fail --verbose --silent --insecure \
     --request PUT \
     --header 'Content-Type: application/json' \
-    --data-raw "${rendezvous_info_json}" \
+    --data-raw "${rv_info_v1}" \
     "${manufacturer_url}/api/v1/rvinfo"
 }
 
@@ -33,6 +33,59 @@ delete_rendezvous_info() {
   curl --fail --verbose --silent --insecure \
     --request DELETE \
     "${manufacturer_url}/api/v1/rvinfo"
+}
+
+# === V2 API Functions (OpenAPI format) ===
+
+get_rendezvous_info_v2() {
+  local manufacturer_url=$1
+  curl --fail --verbose --silent --insecure \
+    --request GET \
+    "${manufacturer_url}/api/v2/rvinfo"
+}
+
+set_rendezvous_info_v2() {
+  local manufacturer_url=$1
+  local rv_info_v2=$2
+  curl --fail --verbose --silent --insecure \
+    --request PUT \
+    --header 'Content-Type: application/json' \
+    --data-raw "${rv_info_v2}" \
+    "${manufacturer_url}/api/v2/rvinfo"
+}
+
+update_rendezvous_info_v2() {
+  local manufacturer_url=$1
+  local rv_info_v2=$2
+  curl --fail --verbose --silent --insecure \
+    --request PUT \
+    --header 'Content-Type: application/json' \
+    --data-raw "${rv_info_v2}" \
+    "${manufacturer_url}/api/v2/rvinfo"
+}
+
+delete_rendezvous_info_v2() {
+  local manufacturer_url=$1
+  curl --fail --verbose --silent --insecure \
+    --request DELETE \
+    "${manufacturer_url}/api/v2/rvinfo"
+}
+
+set_rendezvous_info_bypass_v2() {
+  local manufacturer_url=$1
+  local dns=$2
+  local ip=$3
+  local port=$4
+  local protocol=$5
+
+  # V2 format: array of arrays with rv_bypass flag, integer ports
+  rv_info_bypass="[[{\"dns\":\"${dns}\"},{\"ip\":\"${ip}\"},{\"device_port\":${port}},{\"owner_port\":${port}},{\"protocol\":\"${protocol}\"},{\"rv_bypass\":true}]]"
+
+  curl --fail --verbose --silent --insecure \
+    --request PUT \
+    --header 'Content-Type: application/json' \
+    --data-raw "${rv_info_bypass}" \
+    "${manufacturer_url}/api/v2/rvinfo"
 }
 
 get_owner_redirect_info() {

@@ -34,10 +34,10 @@ run_test() {
   log_info "Wait for the services to be ready:"
   wait_for_services_ready
 
-  log_info "Setting Rendezvous Info with RV BYPASS flag using V1 API"
-  # V1 format: array of arrays with string ports, rv_bypass flag
-  rv_info_v1="[[{\"dns\": \"${owner_dns}\"}, {\"device_port\": \"${owner_port}\"}, {\"protocol\": \"${owner_protocol}\"}, {\"ip\": \"${owner_ip}\"}, {\"owner_port\": \"${owner_port}\"}, {\"rv_bypass\": true}]]"
-  set_or_update_rendezvous_info "${manufacturer_url}" "${rv_info_v1}"
+  log_info "Setting Rendezvous Info with RV BYPASS flag using V2 API"
+  # V2 format: array of arrays with integer ports, rv_bypass flag
+  rv_info_v2="[[{\"dns\": \"${owner_dns}\"}, {\"device_port\": ${owner_port}}, {\"protocol\": \"${owner_protocol}\"}, {\"ip\": \"${owner_ip}\"}, {\"owner_port\": ${owner_port}}, {\"rv_bypass\": true}]]"
+  set_rendezvous_info_v2 "${manufacturer_url}" "${rv_info_v2}"
 
   log_info "Run Device Initialization"
   guid=$(run_device_initialization)

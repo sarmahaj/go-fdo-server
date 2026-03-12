@@ -1,16 +1,16 @@
 #! /usr/bin/env bash
-# RV bypass test: Device skips TO1 by getting Owner address directly from voucher (TO0 not needed)
 
 set -euo pipefail
 
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)/utils.sh"
 
 run_test() {
-  # Override services array to exclude rendezvous (not needed with RV bypass)
-  services=("${manufacturer_service_name}" "${owner_service_name}")
 
   log_info "Setting the error trap handler"
   trap on_failure EXIT
+
+  log_info "Environment variables"
+  show_env
 
   log_info "Creating directories"
   create_directories
@@ -27,17 +27,19 @@ run_test() {
   log_info "Configuring services"
   configure_services
 
-  # Start only manufacturer and owner (rendezvous excluded via services array override)
   log_info "Configure DNS and start services"
   start_services
 
   log_info "Wait for the services to be ready:"
   wait_for_services_ready
 
-  log_info "Setting Rendezvous Info with RV BYPASS flag using V1 API"
-  # V1 format: array of arrays with string ports, rv_bypass flag
-  rv_info_v1="[[{\"dns\": \"${owner_dns}\"}, {\"device_port\": \"${owner_port}\"}, {\"protocol\": \"${owner_protocol}\"}, {\"ip\": \"${owner_ip}\"}, {\"owner_port\": \"${owner_port}\"}, {\"rv_bypass\": true}]]"
-  set_or_update_rendezvous_info "${manufacturer_url}" "${rv_info_v1}"
+  log_info "Setting Rendezvous Info using V2 API (RendezvousInfo)"
+  # V2 format: array of arrays with integer ports
+  rv_info_v2="[[{\"dns\":\"${rendezvous_dns}\"},{\"device_port\":${rendezvous_port}},{\"protocol\":\"${rendezvous_protocol}\"},{\"ip\":\"${rendezvous_ip}\"},{\"owner_port\":${rendezvous_port}}]]"
+  set_rendezvous_info_v2 "${manufacturer_url}" "${rv_info_v2}"
+
+  log_info "Adding Device CA certificate to rendezvous"
+  add_device_ca_cert "${rendezvous_url}" "${device_ca_crt}" | jq -r -M .
 
   log_info "Run Device Initialization"
   guid=$(run_device_initialization)
@@ -49,8 +51,8 @@ run_test() {
   log_info "Sending Ownership Voucher to the Owner"
   send_manufacturer_ov_to_owner "${manufacturer_url}" "${guid}" "${owner_url}"
 
-  log_info "Running FIDO Device Onboard with RV bypass (without Rendezvous service)"
-  run_fido_device_onboard "${guid}" --debug || log_error "Onboarding failed!"
+  log_info "Running FIDO Device Onboard"
+  run_fido_device_onboard ${guid} --debug || log_error "Onboarding failed!"
 
   log_info "Unsetting the error trap handler"
   trap - EXIT
