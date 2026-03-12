@@ -23,6 +23,8 @@ func RvInfoHandler(rvInfoState *state.RvInfoState) http.HandlerFunc {
 			createRvInfo(w, r, rvInfoState)
 		case http.MethodPut:
 			updateRvInfo(w, r, rvInfoState)
+		case http.MethodDelete:
+			deleteRvInfo(w, r, rvInfoState)
 		default:
 			slog.Error("Method not allowed", "method", r.Method, "path", r.URL.Path)
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -93,10 +95,18 @@ func updateRvInfo(w http.ResponseWriter, r *http.Request, rvInfoState *state.RvI
 		return
 	}
 
-	if err := rvInfoState.UpdateRvInfoV1(r.Context(), rvInfo); err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			slog.Error("rvInfo does not exist, cannot update")
-			http.Error(w, "rvInfo does not exist", http.StatusNotFound)
+	// V1 API: PUT acts as upsert (create OR update)
+	err = rvInfoState.UpdateRvInfoV1(r.Context(), rvInfo)
+	if err != nil && errors.Is(err, gorm.ErrRecordNotFound) {
+		// Record doesn't exist, try to insert instead
+		slog.Debug("rvInfo does not exist, creating new")
+		err = rvInfoState.InsertRvInfoV1(r.Context(), rvInfo)
+	}
+
+	if err != nil {
+		if errors.Is(err, gorm.ErrDuplicatedKey) {
+			slog.Error("rvInfo already exists (constraint)", "error", err)
+			http.Error(w, "rvInfo already exists", http.StatusConflict)
 			return
 		}
 		if errors.Is(err, state.ErrInvalidRvInfo) {
@@ -104,13 +114,48 @@ func updateRvInfo(w http.ResponseWriter, r *http.Request, rvInfoState *state.RvI
 			http.Error(w, "Invalid rvInfo", http.StatusBadRequest)
 			return
 		}
-		slog.Error("Error updating rvInfo", "error", err)
-		http.Error(w, "Error updating rvInfo", http.StatusInternalServerError)
+		slog.Error("Error upserting rvInfo", "error", err)
+		http.Error(w, "Error upserting rvInfo", http.StatusInternalServerError)
 		return
 	}
 
-	slog.Debug("rvInfo updated")
+	slog.Debug("rvInfo upserted")
 
 	w.Header().Set("Content-Type", "application/json")
 	writeResponse(w, rvInfo)
+}
+
+func deleteRvInfo(w http.ResponseWriter, r *http.Request, rvInfoState *state.RvInfoState) {
+	slog.Warn("V1 API /api/v1/rvinfo is deprecated and will be removed in a future release. Please migrate to /api/v2/rvinfo")
+
+	// Get current config before deleting (to return it)
+	rvInfoJSON, err := rvInfoState.FetchRvInfoJSON(r.Context())
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			slog.Error("No rvInfo found to delete")
+			http.Error(w, "No rvInfo found", http.StatusNotFound)
+			return
+		}
+		slog.Error("Error fetching rvInfo", "error", err)
+		http.Error(w, "Error fetching rvInfo", http.StatusInternalServerError)
+		return
+	}
+
+	// Delete the config
+	if err := rvInfoState.DeleteRvInfo(r.Context()); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			slog.Error("No rvInfo found to delete")
+			http.Error(w, "No rvInfo found", http.StatusNotFound)
+			return
+		}
+		slog.Error("Error deleting rvInfo", "error", err)
+		http.Error(w, "Error deleting rvInfo", http.StatusInternalServerError)
+		return
+	}
+
+	slog.Debug("rvInfo deleted")
+
+	// Return the deleted config
+	w.Header().Set("Content-Type", "application/json")
+	writeResponse(w, rvInfoJSON)
 }
