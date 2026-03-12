@@ -11,7 +11,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
-	"github.com/fido-device-onboard/go-fdo-server/internal/db"
+	"github.com/fido-device-onboard/go-fdo-server/internal/manufacturing"
 )
 
 // Sentinel errors for RV info operations
@@ -63,7 +63,7 @@ func (s *RvInfoState) FetchRvInfoJSON(ctx context.Context) ([]byte, error) {
 // InsertRvInfo creates new rendezvous information configuration
 func (s *RvInfoState) InsertRvInfo(ctx context.Context, data []byte) error {
 	// Validate data can be parsed into [][]protocol.RvInstruction
-	if _, err := db.ParseOpenAPIRvJSON(data); err != nil {
+	if _, err := manufacturing.ParseOpenAPIRvJSON(data); err != nil {
 		return errors.Join(ErrInvalidRvInfo, err)
 	}
 
@@ -85,7 +85,7 @@ func (s *RvInfoState) InsertRvInfo(ctx context.Context, data []byte) error {
 // UpdateRvInfo updates existing rendezvous information configuration
 func (s *RvInfoState) UpdateRvInfo(ctx context.Context, data []byte) error {
 	// Validate data can be parsed into [][]protocol.RvInstruction
-	if _, err := db.ParseOpenAPIRvJSON(data); err != nil {
+	if _, err := manufacturing.ParseOpenAPIRvJSON(data); err != nil {
 		return errors.Join(ErrInvalidRvInfo, err)
 	}
 

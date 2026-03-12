@@ -1,4 +1,4 @@
-package db
+package manufacturing
 
 import (
 	"strings"
