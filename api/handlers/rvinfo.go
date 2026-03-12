@@ -36,13 +36,16 @@ func getRvInfo(w http.ResponseWriter, r *http.Request, rvInfoState *state.RvInfo
 	rvInfoJSON, err := rvInfoState.FetchRvInfoJSON(r.Context())
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			slog.Error("No rvInfo found")
-			http.Error(w, "No rvInfo found", http.StatusNotFound)
+			// Return empty array for backward compatibility
+			slog.Debug("No rvInfo found, returning empty array")
+			w.Header().Set("Content-Type", "application/json")
+			writeResponse(w, []byte("[]"))
+			return
 		} else {
 			slog.Error("Error fetching rvInfo", "error", err)
 			http.Error(w, "Error fetching rvInfo", http.StatusInternalServerError)
+			return
 		}
-		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
