@@ -31,6 +31,7 @@ func RvInfoHandler() http.HandlerFunc {
 }
 
 func getRvInfo(w http.ResponseWriter, _ *http.Request) {
+	slog.Warn("V1 API /api/v1/rvinfo is deprecated and will be removed in a future release. Please migrate to /api/v2/rvinfo")
 	slog.Debug("Fetching rvInfo")
 	rvInfoJSON, err := db.FetchRvInfoJSON()
 	if err != nil {
@@ -49,6 +50,7 @@ func getRvInfo(w http.ResponseWriter, _ *http.Request) {
 }
 
 func createRvInfo(w http.ResponseWriter, r *http.Request) {
+	slog.Warn("V1 API /api/v1/rvinfo is deprecated and will be removed in a future release. Please migrate to /api/v2/rvinfo")
 	rvInfo, err := io.ReadAll(r.Body)
 	if err != nil {
 		slog.Error("Error reading body", "error", err)
@@ -80,6 +82,7 @@ func createRvInfo(w http.ResponseWriter, r *http.Request) {
 }
 
 func updateRvInfo(w http.ResponseWriter, r *http.Request) {
+	slog.Warn("V1 API /api/v1/rvinfo is deprecated and will be removed in a future release. Please migrate to /api/v2/rvinfo")
 	rvInfo, err := io.ReadAll(r.Body)
 	if err != nil {
 		slog.Error("Error reading body", "error", err)
