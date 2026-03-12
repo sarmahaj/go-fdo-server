@@ -9,12 +9,21 @@ import (
 	"testing"
 
 	"github.com/fido-device-onboard/go-fdo-server/api/handlers"
+	"github.com/fido-device-onboard/go-fdo-server/internal/db"
+	"github.com/fido-device-onboard/go-fdo-server/internal/state"
 )
 
 func TestRvInfo_PostConflictOnDuplicate(t *testing.T) {
-	setupTestDB(t)
+	dbState, err := db.InitDb("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("Failed to initialize test database: %v", err)
+	}
+	rvInfoState, err := state.InitRvInfoDB(dbState.DB)
+	if err != nil {
+		t.Fatalf("Failed to initialize RvInfo state: %v", err)
+	}
 
-	handler := handlers.RvInfoHandler()
+	handler := handlers.RvInfoHandler(rvInfoState)
 	body := []byte(`[[{"dns":"rv.example"},{"device_port":8082},{"owner_port":8082},{"protocol":"http"}]]`)
 
 	// First POST should create (201)
@@ -35,24 +44,33 @@ func TestRvInfo_PostConflictOnDuplicate(t *testing.T) {
 }
 
 func TestRvInfo_Put404ThenCreateThenUpdateAndGet(t *testing.T) {
-	setupTestDB(t)
+	dbState, err := db.InitDb("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("Failed to initialize test database: %v", err)
+	}
+	rvInfoState, err := state.InitRvInfoDB(dbState.DB)
+	if err != nil {
+		t.Fatalf("Failed to initialize RvInfo state: %v", err)
+	}
+
+	handler := handlers.RvInfoHandler(rvInfoState)
 
 	get := func() *httptest.ResponseRecorder {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/rv", nil)
 		rec := httptest.NewRecorder()
-		handlers.RvInfoHandler()(rec, req)
+		handler(rec, req)
 		return rec
 	}
 	put := func(body []byte) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(http.MethodPut, "/api/v1/rv", bytes.NewReader(body))
 		rec := httptest.NewRecorder()
-		handlers.RvInfoHandler()(rec, req)
+		handler(rec, req)
 		return rec
 	}
 	post := func(body []byte) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/rv", bytes.NewReader(body))
 		rec := httptest.NewRecorder()
-		handlers.RvInfoHandler()(rec, req)
+		handler(rec, req)
 		return rec
 	}
 
