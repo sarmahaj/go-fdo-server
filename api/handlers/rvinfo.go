@@ -61,7 +61,7 @@ func createRvInfo(w http.ResponseWriter, r *http.Request, rvInfoState *state.RvI
 		return
 	}
 
-	if err := rvInfoState.InsertRvInfo(r.Context(), rvInfo); err != nil {
+	if err := rvInfoState.InsertRvInfoV1(r.Context(), rvInfo); err != nil {
 		if errors.Is(err, gorm.ErrDuplicatedKey) {
 			slog.Error("rvInfo already exists (constraint)", "error", err)
 			http.Error(w, "rvInfo already exists", http.StatusConflict)
@@ -93,7 +93,7 @@ func updateRvInfo(w http.ResponseWriter, r *http.Request, rvInfoState *state.RvI
 		return
 	}
 
-	if err := rvInfoState.UpdateRvInfo(r.Context(), rvInfo); err != nil {
+	if err := rvInfoState.UpdateRvInfoV1(r.Context(), rvInfo); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			slog.Error("rvInfo does not exist, cannot update")
 			http.Error(w, "rvInfo does not exist", http.StatusNotFound)

@@ -9,12 +9,14 @@ import (
 	"fmt"
 	"math"
 	"net"
+	"strconv"
 
 	"github.com/fido-device-onboard/go-fdo/cbor"
 	"github.com/fido-device-onboard/go-fdo/protocol"
 )
 
 // ParseOpenAPIRvJSON parses OpenAPI-formatted RvInfo JSON into [][]protocol.RvInstruction.
+// V2 API: Strict integer-only port validation.
 //
 // Expected format (array of arrays of single-key objects):
 //
@@ -35,6 +37,16 @@ import (
 // Each inner array element is a single instruction (key-value pair).
 // This format aligns with the OpenAPI specification and FDO protocol CBOR structure.
 func ParseOpenAPIRvJSON(rawJSON []byte) ([][]protocol.RvInstruction, error) {
+	return parseOpenAPIRvJSONWithPortParser(rawJSON, parsePortValue)
+}
+
+// ParseOpenAPIRvJSONV1 parses OpenAPI-formatted RvInfo JSON (V1 API).
+// V1 API: Accepts both string and integer ports for backward compatibility.
+func ParseOpenAPIRvJSONV1(rawJSON []byte) ([][]protocol.RvInstruction, error) {
+	return parseOpenAPIRvJSONWithPortParser(rawJSON, parsePortValueV1)
+}
+
+func parseOpenAPIRvJSONWithPortParser(rawJSON []byte, portParser func(any) (uint16, error)) ([][]protocol.RvInstruction, error) {
 	// Parse as array of arrays of single-key objects
 	var directives [][]map[string]interface{}
 	if err := json.Unmarshal(rawJSON, &directives); err != nil {
@@ -64,7 +76,7 @@ func ParseOpenAPIRvJSON(rawJSON []byte) ([][]protocol.RvInstruction, error) {
 			}
 
 			// Map key to protocol instruction and encode value
-			rvInstr, err := parseRvInstruction(key, value)
+			rvInstr, err := parseRvInstruction(key, value, portParser)
 			if err != nil {
 				return nil, fmt.Errorf("rvinfo[%d][%d]: %w", directiveIdx, instrIdx, err)
 			}
@@ -89,7 +101,7 @@ func ParseOpenAPIRvJSON(rawJSON []byte) ([][]protocol.RvInstruction, error) {
 }
 
 // parseRvInstruction converts a single key-value pair into a protocol.RvInstruction
-func parseRvInstruction(key string, value interface{}) (*protocol.RvInstruction, error) {
+func parseRvInstruction(key string, value interface{}, portParser func(any) (uint16, error)) (*protocol.RvInstruction, error) {
 	switch key {
 	case "dns":
 		str, ok := value.(string)
@@ -144,7 +156,7 @@ func parseRvInstruction(key string, value interface{}) (*protocol.RvInstruction,
 		return &protocol.RvInstruction{Variable: protocol.RVMedium, Value: enc}, nil
 
 	case "device_port":
-		num, err := parsePortValue(value)
+		num, err := portParser(value)
 		if err != nil {
 			return nil, fmt.Errorf("device_port: %w", err)
 		}
@@ -155,7 +167,7 @@ func parseRvInstruction(key string, value interface{}) (*protocol.RvInstruction,
 		return &protocol.RvInstruction{Variable: protocol.RVDevPort, Value: enc}, nil
 
 	case "owner_port":
-		num, err := parsePortValue(value)
+		num, err := portParser(value)
 		if err != nil {
 			return nil, fmt.Errorf("owner_port: %w", err)
 		}
@@ -342,7 +354,7 @@ func encodeRvValue(rvVar protocol.RvVar, val any) ([]byte, error) {
 	}
 }
 
-// parsePortValue validates port values for OpenAPI spec.
+// parsePortValue validates port values for V2 OpenAPI spec.
 // Only accepts integers (float64 in JSON). Rejects strings for strict type compliance.
 func parsePortValue(v any) (uint16, error) {
 	// Only accept integer (float64 in JSON)
@@ -362,6 +374,36 @@ func parsePortValue(v any) (uint16, error) {
 	}
 
 	return uint16(f), nil
+}
+
+// parsePortValueV1 validates port values for V1 API (backward compatibility).
+// Accepts both integers and strings for legacy support.
+func parsePortValueV1(v any) (uint16, error) {
+	switch t := v.(type) {
+	case float64:
+		if t != math.Trunc(t) {
+			return 0, fmt.Errorf("port must be an integer, got %v", t)
+		}
+		if t < 1 || t > 65535 {
+			return 0, fmt.Errorf("port out of range: %v", t)
+		}
+		return uint16(t), nil
+	case string:
+		// V1 API backward compatibility: accept string ports
+		if t == "" {
+			return 0, fmt.Errorf("empty port")
+		}
+		port, err := strconv.Atoi(t)
+		if err != nil {
+			return 0, fmt.Errorf("invalid port string: %w", err)
+		}
+		if port < 1 || port > 65535 {
+			return 0, fmt.Errorf("port out of range: %d", port)
+		}
+		return uint16(port), nil
+	default:
+		return 0, fmt.Errorf("port must be an integer or string, got %T", v)
+	}
 }
 
 // protocolCodeFromString converts protocol string to protocol code

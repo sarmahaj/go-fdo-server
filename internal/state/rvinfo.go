@@ -99,6 +99,47 @@ func (s *RvInfoState) UpdateRvInfo(ctx context.Context, data []byte) error {
 	return nil
 }
 
+// InsertRvInfoV1 creates new rendezvous information configuration (V1 API).
+// Accepts both string and integer ports for backward compatibility.
+func (s *RvInfoState) InsertRvInfoV1(ctx context.Context, data []byte) error {
+	// Validate data can be parsed into [][]protocol.RvInstruction (V1 format)
+	if _, err := manufacturing.ParseOpenAPIRvJSONV1(data); err != nil {
+		return errors.Join(ErrInvalidRvInfo, err)
+	}
+
+	rvInfo := RvInfo{
+		ID:    1,
+		Value: data,
+	}
+
+	tx := s.DB.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&rvInfo)
+	if tx.Error != nil {
+		return tx.Error
+	}
+	if tx.RowsAffected == 0 {
+		return gorm.ErrDuplicatedKey
+	}
+	return nil
+}
+
+// UpdateRvInfoV1 updates existing rendezvous information configuration (V1 API).
+// Accepts both string and integer ports for backward compatibility.
+func (s *RvInfoState) UpdateRvInfoV1(ctx context.Context, data []byte) error {
+	// Validate data can be parsed into [][]protocol.RvInstruction (V1 format)
+	if _, err := manufacturing.ParseOpenAPIRvJSONV1(data); err != nil {
+		return errors.Join(ErrInvalidRvInfo, err)
+	}
+
+	tx := s.DB.WithContext(ctx).Model(&RvInfo{}).Where("id = ?", 1).Update("value", data)
+	if tx.Error != nil {
+		return tx.Error
+	}
+	if tx.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
 // DeleteRvInfo removes the rendezvous information configuration
 func (s *RvInfoState) DeleteRvInfo(ctx context.Context) error {
 	tx := s.DB.WithContext(ctx).Where("id = ?", 1).Delete(&RvInfo{})
