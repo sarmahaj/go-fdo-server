@@ -11,8 +11,8 @@ import (
 	"net"
 	"strconv"
 
-	"github.com/fido-device-onboard/go-fdo/protocol"
 	"github.com/fido-device-onboard/go-fdo-server/internal/manufacturing"
+	"github.com/fido-device-onboard/go-fdo/protocol"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -272,6 +272,7 @@ func FetchRvInfo() ([][]protocol.RvInstruction, error) {
 	}
 	return manufacturing.ParseOpenAPIRvJSON(rvInfo)
 }
+
 // parsePortValueV1 validates port values for V1 API (backward compatibility).
 // Accepts both integers and strings for legacy support.
 func parsePortValueV1(v any) (uint16, error) {

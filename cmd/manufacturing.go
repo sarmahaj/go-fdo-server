@@ -25,9 +25,9 @@ import (
 
 	"github.com/fido-device-onboard/go-fdo"
 	"github.com/fido-device-onboard/go-fdo-server/api/handlers"
-	"github.com/fido-device-onboard/go-fdo-server/internal/db"
 	"github.com/fido-device-onboard/go-fdo-server/internal/handlers/health"
 	"github.com/fido-device-onboard/go-fdo-server/internal/handlers/rvinfo"
+	"github.com/fido-device-onboard/go-fdo-server/internal/manufacturing"
 	"github.com/fido-device-onboard/go-fdo-server/internal/state"
 	"github.com/fido-device-onboard/go-fdo/custom"
 	transport "github.com/fido-device-onboard/go-fdo/http"
@@ -239,6 +239,13 @@ func serveManufacturing(config *ManufacturingServerConfig) error {
 		return err
 	}
 
+	// Initialize RvInfo state (needed by FDO protocol handler for voucher creation)
+	rvInfoState, err := state.InitRvInfoDB(dbState.DB)
+	if err != nil {
+		slog.Error("failed to initialize RvInfo state", "err", err)
+		return err
+	}
+
 	// Create FDO responder
 	handler := &transport.Handler{
 		Tokens: dbState,
@@ -262,8 +269,14 @@ func serveManufacturing(config *ManufacturingServerConfig) error {
 				*ov = *extended
 				return nil
 			},
-			RvInfo: func(context.Context, *fdo.Voucher) ([][]protocol.RvInstruction, error) {
-				return db.FetchRvInfo()
+			RvInfo: func(ctx context.Context, _ *fdo.Voucher) ([][]protocol.RvInstruction, error) {
+				// Fetch RV info JSON from state layer
+				rvInfoJSON, err := rvInfoState.FetchRvInfoJSON(ctx)
+				if err != nil {
+					return nil, err
+				}
+				// Parse using V1 parser for backward compatibility
+				return manufacturing.ParseOpenAPIRvJSONV1(rvInfoJSON)
 			},
 		},
 	}
@@ -283,13 +296,6 @@ func serveManufacturing(config *ManufacturingServerConfig) error {
 	healthServer := health.NewServer(healthState)
 	healthStrictHandler := health.NewStrictHandler(&healthServer, nil)
 	health.HandlerFromMux(healthStrictHandler, rootMux)
-
-	// Initialize RvInfo state (shared between V1 and V2)
-	rvInfoState, err := state.InitRvInfoDB(dbState.DB)
-	if err != nil {
-		slog.Error("failed to initialize RvInfo state", "err", err)
-		return err
-	}
 
 	// === V1 API (Old handlers for backward compatibility) ===
 	mgmtAPIServeMuxV1 := http.NewServeMux()
