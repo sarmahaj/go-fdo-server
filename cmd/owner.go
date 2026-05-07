@@ -21,6 +21,7 @@ import (
 	"path"
 	"path/filepath"
 	"slices"
+	"sync"
 	"syscall"
 	"time"
 
@@ -335,6 +336,7 @@ func (state *OwnerServerState) OwnerKey(ctx context.Context, keyType protocol.Ke
 const sweepInterval = 1 * time.Minute
 
 type moduleStateMachines struct {
+	mu     sync.Mutex
 	DB     *db.State
 	config *ServiceInfoConfig
 	// current module state machine state for all sessions (indexed by token)
@@ -352,6 +354,9 @@ type moduleStateMachineState struct {
 }
 
 func (s *moduleStateMachines) Module(ctx context.Context) (string, serviceinfo.OwnerModule, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	token, ok := s.DB.TokenFromContext(ctx)
 	if !ok {
 		return "", nil, fmt.Errorf("invalid context: no token")
@@ -364,6 +369,9 @@ func (s *moduleStateMachines) Module(ctx context.Context) (string, serviceinfo.O
 }
 
 func (s *moduleStateMachines) NextModule(ctx context.Context) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	token, ok := s.DB.TokenFromContext(ctx)
 	if !ok {
 		return false, fmt.Errorf("invalid context: no token")
@@ -398,6 +406,9 @@ func (s *moduleStateMachines) NextModule(ctx context.Context) (bool, error) {
 }
 
 func (s *moduleStateMachines) CleanupModules(ctx context.Context) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	token, ok := s.DB.TokenFromContext(ctx)
 	if !ok {
 		return
@@ -411,8 +422,9 @@ func (s *moduleStateMachines) CleanupModules(ctx context.Context) {
 	delete(s.states, token)
 }
 
-// cleanupUploadDirs removes GUID-based upload directories if modules
-// did not complete naturally (i.e. TO2 failed).
+// cleanupUploadDirs performs best-effort removal of GUID-based upload
+// directories if modules did not complete naturally (i.e. TO2 failed).
+// If removal fails, the directory is left in place and the error is logged.
 func (s *moduleStateMachines) cleanupUploadDirs(module *moduleStateMachineState) {
 	if module.Completed {
 		return
